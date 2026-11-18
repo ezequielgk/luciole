@@ -27,6 +27,11 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: archlinux:latest
+    # The container runs as root while the workspace belongs to the runner user, so
+    # bash is requested explicitly and git needs a safe.directory entry below.
+    defaults:
+      run:
+        shell: bash
     env:
       INPUT_VERSION: ${{ inputs.version }}
     steps:
@@ -44,6 +49,9 @@ jobs:
             python ffmpeg ffmpegthumbnailer poppler 7zip
 
       - uses: actions/checkout@v6
+
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Resolve version
         id: version
@@ -168,6 +176,7 @@ jobs:
           gh release create "$TAG" \
             "dist/luciole-${VERSION}-x86_64-linux-gnu.tar.gz" \
             dist/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
             "${args[@]}"
 
       - name: Upload tarball artifact
