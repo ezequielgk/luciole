@@ -43,9 +43,17 @@ jobs:
           fetch-depth: 0
 
       - name: Validate settings
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [[ ! "$NOTIFY_EVERY" =~ ^[0-9]+$ ]] || (( NOTIFY_EVERY < 1 )); then
             echo "error: UPSTREAM_NOTIFY_EVERY must be a positive integer (got '$NOTIFY_EVERY')" >&2
+            exit 1
+          fi
+          # Issues are the notification channel; fail with a clear message instead of a
+          # cryptic gh error when the repository has them turned off.
+          if [[ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues)" != "true" ]]; then
+            echo "error: issues are disabled in $GITHUB_REPOSITORY; enable them in Settings > General > Features" >&2
             exit 1
           fi
           echo "upstream=$UPSTREAM_REPO notify_every=$NOTIFY_EVERY force=$FORCE"
@@ -186,10 +194,12 @@ jobs:
           } > issue-body.md
 
           gh label create "$ISSUE_LABEL" --force \
+            --repo "$GITHUB_REPOSITORY" \
             --color FBCA04 \
             --description "Upstream commits reported by the daily watcher"
 
           gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
             --title "Upstream: $COUNT new commits in $UPSTREAM_REPO" \
             --body-file issue-body.md \
             --label "$ISSUE_LABEL"
