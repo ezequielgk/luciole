@@ -196,13 +196,43 @@ jobs:
 
       - name: Write summary
         if: always()
+        env:
+          UPSTREAM_HEAD: ${{ steps.evaluate.outputs.upstream_head }}
+          ORIGIN_HEAD: ${{ steps.evaluate.outputs.origin_head }}
+          BASE: ${{ steps.evaluate.outputs.base }}
+          COUNT: ${{ steps.evaluate.outputs.count }}
+          AHEAD: ${{ steps.evaluate.outputs.ahead }}
+          NOTIFY: ${{ steps.evaluate.outputs.notify }}
         run: |
           {
             echo "## Upstream watcher"
             echo
             echo "- Upstream: \`$UPSTREAM_REPO\`"
-            echo "- Pending since last notification: ${{ steps.evaluate.outputs.count || 'unknown' }}"
-            echo "- Total commits behind upstream: ${{ steps.evaluate.outputs.ahead || 'unknown' }}"
-            echo "- Threshold: $NOTIFY_EVERY (force: $FORCE)"
-            echo "- Issue opened: ${{ steps.evaluate.outputs.notify || 'false' }}"
+            echo "- Pending since last notification: ${COUNT:-unknown}"
+            echo "- Total commits behind upstream: ${AHEAD:-unknown}"
+            echo "- Threshold: $NOTIFY_EVERY (forced: $FORCE)"
+            echo "- Issue opened: ${NOTIFY:-false}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          # List what is pending on every run, so the run page answers "what changed"
+          # even when the threshold is not reached and no issue is opened.
+          if [[ -n "${UPSTREAM_HEAD:-}" && -n "${BASE:-}" && -n "${ORIGIN_HEAD:-}" ]]; then
+            mapfile -t commits < <(git rev-list --reverse "$UPSTREAM_HEAD" "^$BASE" "^$ORIGIN_HEAD")
+            total="${#commits[@]}"
+            if (( total > 0 )); then
+              shown="$total"
+              if (( shown > 20 )); then shown=20; fi
+              {
+                echo
+                echo "### Pending upstream commits ($total)"
+                echo
+              } >> "$GITHUB_STEP_SUMMARY"
+              for sha in "${commits[@]:total-shown:shown}"; do
+                line="$(git show -s --format='%h%x09%ad%x09%s' --date=short "$sha")"
+                IFS=$'\t' read -r short date subject <<<"$line"
+                subject="${subject//\`/\'}"
+                echo "- [\`$short\`](https://github.com/$UPSTREAM_REPO/commit/$sha) \`$subject\` ($date)" \
+                  >> "$GITHUB_STEP_SUMMARY"
+              done
+            fi
+          fi
