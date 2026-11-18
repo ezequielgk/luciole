@@ -1,0 +1,205 @@
+name: Upstream watcher
+
+# Checks the upstream project once a day and opens an issue in this repository every
+# NOTIFY_EVERY (default 10) upstream commits that are not merged here yet. The last
+# notified commit is read from the newest issue carrying the `upstream-update` label,
+# so this workflow needs no repository state of its own.
+
+on:
+  schedule:
+    # Daily at 07:23 UTC; GitHub may delay scheduled runs at busy times.
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Open an issue even when fewer than NOTIFY_EVERY commits are pending
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-watcher
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: ${{ vars.UPSTREAM_REPO || 'noctalia-dev/luciole' }}
+  NOTIFY_EVERY: ${{ vars.UPSTREAM_NOTIFY_EVERY || '10' }}
+  ISSUE_LABEL: upstream-update
+  FORCE: ${{ inputs.force || 'false' }}
+
+jobs:
+  check:
+    name: Check upstream commits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate settings
+        run: |
+          if [[ ! "$NOTIFY_EVERY" =~ ^[0-9]+$ ]] || (( NOTIFY_EVERY < 1 )); then
+            echo "error: UPSTREAM_NOTIFY_EVERY must be a positive integer (got '$NOTIFY_EVERY')" >&2
+            exit 1
+          fi
+          echo "upstream=$UPSTREAM_REPO notify_every=$NOTIFY_EVERY force=$FORCE"
+
+      - name: Fetch upstream and origin
+        run: |
+          set -euo pipefail
+          upstream_url="https://github.com/$UPSTREAM_REPO.git"
+          git remote add upstream "$upstream_url" 2>/dev/null || git remote set-url upstream "$upstream_url"
+          git fetch --no-tags --prune upstream '+refs/heads/main:refs/remotes/upstream/main'
+          git fetch --no-tags --prune origin '+refs/heads/main:refs/remotes/origin/main'
+
+      - name: Evaluate pending commits
+        id: evaluate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          upstream_head="$(git rev-parse refs/remotes/upstream/main)"
+          origin_head="$(git rev-parse refs/remotes/origin/main)"
+
+          # The newest tracking issue remembers which upstream commit was already
+          # reported, so each issue covers the commits that arrived after it.
+          last_head="$(gh issue list --label "$ISSUE_LABEL" --state all --limit 100 --json body \
+            --jq '.[] | (.body // "")' \
+            | grep -o 'upstream-head: [0-9a-f]\{7,40\}' | head -n 1 | awk '{print $2}' || true)"
+          last_issue="$(gh issue list --label "$ISSUE_LABEL" --state all --limit 1 --json number \
+            --jq '.[0].number // ""' | head -n 1)"
+
+          base=""
+          if [[ -n "$last_head" ]]; then
+            if git cat-file -e "${last_head}^{commit}" 2>/dev/null \
+              && git merge-base --is-ancestor "$last_head" "$upstream_head"; then
+              base="$last_head"
+            else
+              echo "warning: last reported commit $last_head is not an ancestor of upstream main; counting from the fork point" >&2
+            fi
+          fi
+          if [[ -z "$base" ]]; then
+            base="$(git merge-base "$origin_head" "$upstream_head")"
+          fi
+          if [[ -z "$base" ]]; then
+            echo "error: no common ancestor with $UPSTREAM_REPO; is it the right upstream repository?" >&2
+            exit 1
+          fi
+
+          count="$(git rev-list --count "$upstream_head" "^$origin_head" "^$base")"
+          ahead="$(git rev-list --count "$upstream_head" "^$origin_head")"
+          behind="$(git rev-list --count "$origin_head" "^$upstream_head")"
+
+          notify=false
+          if (( count > 0 )); then
+            if (( count >= NOTIFY_EVERY )) || [[ "$FORCE" == "true" ]]; then
+              notify=true
+            fi
+          fi
+
+          echo "base=$base"
+          echo "upstream_head=$upstream_head"
+          echo "pending_since_last=$count total_behind=$ahead local_only=$behind notify=$notify"
+          {
+            echo "base=$base"
+            echo "upstream_head=$upstream_head"
+            echo "origin_head=$origin_head"
+            echo "count=$count"
+            echo "ahead=$ahead"
+            echo "behind=$behind"
+            echo "last_issue=$last_issue"
+            echo "notify=$notify"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create tracking issue
+        if: steps.evaluate.outputs.notify == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ steps.evaluate.outputs.base }}
+          ORIGIN_HEAD: ${{ steps.evaluate.outputs.origin_head }}
+          UPSTREAM_HEAD: ${{ steps.evaluate.outputs.upstream_head }}
+          COUNT: ${{ steps.evaluate.outputs.count }}
+          AHEAD: ${{ steps.evaluate.outputs.ahead }}
+          LAST_ISSUE: ${{ steps.evaluate.outputs.last_issue }}
+        run: |
+          set -euo pipefail
+          upstream_url="https://github.com/$UPSTREAM_REPO"
+          base_short="$(git rev-parse --short "$BASE")"
+          head_short="$(git rev-parse --short "$UPSTREAM_HEAD")"
+          upstream_version="$(git show "$UPSTREAM_HEAD:VERSION" 2>/dev/null | tr -d '[:space:]' || true)"
+          local_version="$(tr -d '[:space:]' < VERSION)"
+
+          # Newest 100 commits, oldest first, so the list reads like the history.
+          mapfile -t commits < <(git rev-list --reverse "$UPSTREAM_HEAD" "^$BASE" "^$ORIGIN_HEAD")
+          total="${#commits[@]}"
+          shown="$total"
+          if (( shown > 100 )); then shown=100; fi
+          start=$(( total - shown ))
+          previous="none"
+          if [[ -n "$LAST_ISSUE" ]]; then previous="#$LAST_ISSUE"; fi
+          head_date="$(git show -s --format='%s (%ad)' --date=short "$UPSTREAM_HEAD")"
+          head_date="${head_date//\`/\'}"
+
+          {
+            echo "<!-- upstream-base: $BASE -->"
+            echo "<!-- upstream-head: $UPSTREAM_HEAD -->"
+            echo
+            echo "\`$UPSTREAM_REPO\` gained **$COUNT commits** since the last notification ($base_short)."
+            echo "Upstream \`main\` is now \`$head_short\` and this fork is **$AHEAD commits behind**."
+            echo
+            echo "- Upstream head: [\`$head_short\`]($upstream_url/commit/$UPSTREAM_HEAD) $head_date"
+            echo "- Upstream VERSION: \`${upstream_version:-unknown}\`"
+            echo "- This fork VERSION: \`$local_version\`"
+            echo "- Last notification: $previous"
+            echo "- Threshold: every $NOTIFY_EVERY upstream commits"
+            echo
+            echo "### New upstream commits"
+            echo
+            if (( total > shown )); then
+              echo "_Showing the newest $shown of $total commits since $base_short._"
+              echo
+            fi
+            for sha in "${commits[@]:start:shown}"; do
+              line="$(git show -s --format='%h%x09%ad%x09%an%x09%s' --date=short "$sha")"
+              IFS=$'\t' read -r short date author subject <<<"$line"
+              subject="${subject//\`/\'}"
+              echo "- [\`$short\`]($upstream_url/commit/$sha) \`$subject\` ($author, $date)"
+            done
+            echo
+            echo "### Reviewing the changes"
+            echo
+            echo '```sh'
+            echo "git fetch upstream main"
+            echo "git log --stat HEAD..upstream/main"
+            echo "git diff HEAD...upstream/main"
+            echo '```'
+            echo
+            echo "Close this issue once the commits are reviewed or merged. The next issue opens after"
+            echo "$NOTIFY_EVERY more upstream commits, or run **Actions > Upstream watcher > Run workflow**"
+            echo "with \`force\` checked to open one immediately."
+          } > issue-body.md
+
+          gh label create "$ISSUE_LABEL" --force \
+            --color FBCA04 \
+            --description "Upstream commits reported by the daily watcher"
+
+          gh issue create \
+            --title "Upstream: $COUNT new commits in $UPSTREAM_REPO" \
+            --body-file issue-body.md \
+            --label "$ISSUE_LABEL"
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "## Upstream watcher"
+            echo
+            echo "- Upstream: \`$UPSTREAM_REPO\`"
+            echo "- Pending since last notification: ${{ steps.evaluate.outputs.count || 'unknown' }}"
+            echo "- Total commits behind upstream: ${{ steps.evaluate.outputs.ahead || 'unknown' }}"
+            echo "- Threshold: $NOTIFY_EVERY (force: $FORCE)"
+            echo "- Issue opened: ${{ steps.evaluate.outputs.notify || 'false' }}"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,181 @@
+name: Release
+
+# Package the prebuilt binary as a versioned tarball and publish it as a GitHub release.
+# Push a tag such as v0.1.0 (matching VERSION) or run the workflow manually to build
+# the current commit and create the release for it.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release; must match VERSION (defaults to VERSION)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package and publish tarball
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    env:
+      INPUT_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git meson ninja pkgconf github-cli zstd \
+            wayland wayland-protocols \
+            libglvnd freetype2 fontconfig noto-fonts \
+            cairo pango harfbuzz \
+            libxkbcommon glib2 glib-networking gvfs dbus shared-mime-info \
+            gdk-pixbuf2 glycin libheif libwebp librsvg libpng \
+            tomlplusplus acl libarchive xz curl libxml2 \
+            nlohmann-json stb \
+            python ffmpeg ffmpegthumbnailer poppler 7zip
+
+      - uses: actions/checkout@v6
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          pkg_version="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="$GITHUB_REF_NAME"
+            if [[ "$tag" != v* ]]; then
+              echo "error: release tags must look like v0.1.0 (got '$tag')" >&2
+              exit 1
+            fi
+            version="${tag#v}"
+            if [[ "$version" != "$pkg_version" ]]; then
+              echo "error: tag $tag does not match VERSION ($pkg_version); bump VERSION first" >&2
+              exit 1
+            fi
+          else
+            version="${INPUT_VERSION:-$pkg_version}"
+            version="${version#v}"
+            if [[ "$version" != "$pkg_version" ]]; then
+              echo "error: requested version $version does not match VERSION ($pkg_version); bump VERSION first" >&2
+              exit 1
+            fi
+            tag="v$version"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "error: '$version' is not a version of the form 1.2.3 or 1.2.3-rc1" >&2
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "revision=${GITHUB_SHA:0:12}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure
+        env:
+          REVISION: ${{ steps.version.outputs.revision }}
+        run: |
+          # Same release configuration as `just configure release`, with an install
+          # prefix of /usr so the staged tree drops straight into a system root.
+          meson setup build-release \
+            --buildtype=release \
+            -Db_lto=true \
+            --prefix=/usr \
+            -Dtests=disabled \
+            -Dnative_optimizations=false \
+            -Dbuild_revision="$REVISION"
+
+      - name: Build
+        run: meson compile -C build-release luciole
+
+      - name: Stage install tree
+        run: DESTDIR="$PWD/stage" meson install --no-rebuild -C build-release
+
+      - name: Smoke test
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REVISION: ${{ steps.version.outputs.revision }}
+        run: |
+          # --version never opens a window, so it verifies the binary links and reports
+          # the version metadata baked into the release.
+          actual="$(stage/usr/bin/luciole --version)"
+          echo "$actual"
+          expected="luciole $VERSION ($REVISION)"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "error: expected '$expected'" >&2
+            exit 1
+          fi
+
+      - name: Create tarball
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REVISION: ${{ steps.version.outputs.revision }}
+        run: |
+          set -euo pipefail
+          root="luciole-${VERSION}-x86_64-linux-gnu"
+          tarball="${root}.tar.gz"
+          mkdir -p "dist/$root"
+          cp -a stage/. "dist/$root/"
+          cat > "dist/$root/INSTALL.txt" <<EOF
+          Luciole ${VERSION} (x86_64 Linux, GNU libc)
+          Built from ${GITHUB_REPOSITORY} commit ${REVISION} on $(date -u +%Y-%m-%d).
+
+          Install into /usr so the desktop entry, icon, D-Bus services and portal
+          backend land in their expected paths:
+
+            sudo tar -xzf ${tarball} -C /
+
+          Or run it in place without installing:
+
+            ./usr/bin/luciole
+
+          Runtime libraries are not bundled. Install the Wayland, GLib/GIO, Cairo,
+          Pango, HarfBuzz, gdk-pixbuf, libarchive, libcurl, libxml2, freetype2 and
+          toml++ packages of your distribution first (see PACKAGING.md).
+
+          License: MIT, see usr/share/licenses/luciole/LICENSE
+          EOF
+          tar -C dist --owner=0 --group=0 --numeric-owner -czf "dist/$tarball" "$root"
+          (cd dist && sha256sum "$tarball" > SHA256SUMS)
+          ls -lh dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          args=(--title "Luciole $VERSION" --generate-notes)
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            args+=(--verify-tag)
+          else
+            # Manual runs release the checked-out commit under a new tag.
+            args+=(--target "$GITHUB_SHA")
+          fi
+          if [[ "$VERSION" == *-* ]]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$TAG" \
+            "dist/luciole-${VERSION}-x86_64-linux-gnu.tar.gz" \
+            dist/SHA256SUMS \
+            "${args[@]}"
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: luciole-tarball
+          path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
