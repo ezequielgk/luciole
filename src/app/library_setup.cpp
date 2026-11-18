@@ -9,11 +9,40 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <system_error>
+
 namespace luciole {
+
+  namespace {
+
+    std::filesystem::path relocatedAssetsDir() {
+      // The binary is built for a fixed prefix, but a release tarball may be unpacked
+      // anywhere: <prefix>/bin/luciole then finds <prefix>/share/<name>/assets.
+      std::error_code ec;
+      const std::filesystem::path executable = std::filesystem::read_symlink("/proc/self/exe", ec);
+      if (ec || executable.empty()) {
+        return {};
+      }
+      return executable.parent_path().parent_path() / "share" / applicationIdentity().name / "assets";
+    }
+
+  } // namespace
+
   void initializeLibrary() {
     setApplicationIdentity({.name = "luciole", .envPrefix = "LUCIOLE"});
+    std::filesystem::path assets = LUCIOLE_INSTALL_ASSETSDIR;
     const char* overridePath = std::getenv("LUCIOLE_ASSETS_DIR");
-    const std::filesystem::path assets = overridePath ? overridePath : LUCIOLE_INSTALL_ASSETSDIR;
+    if (overridePath != nullptr && overridePath[0] != '\0') {
+      assets = overridePath;
+    } else {
+      std::error_code ec;
+      if (!std::filesystem::is_directory(assets, ec)) {
+        const std::filesystem::path relocated = relocatedAssetsDir();
+        if (!relocated.empty() && std::filesystem::is_directory(relocated, ec)) {
+          assets = relocated;
+        }
+      }
+    }
     paths::setAssetRoots({.application = assets, .library = assets});
     setUiStrings({.keyName = {}, .selectPlaceholder = [] { return std::string("Select…"); }});
     installPixbufImageDecoder();
