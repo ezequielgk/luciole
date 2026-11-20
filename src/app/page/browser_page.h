@@ -477,6 +477,7 @@ private:
   Button* m_up = nullptr;
   Button* m_newFolderButton = nullptr;
   Button* m_sortButton = nullptr;
+  Button* m_emptyTrashButton = nullptr;
   bool m_browserDirty = true;
   std::unique_ptr<PopupSurface> m_popupSurface;
   PopupDismiss m_popupDismiss = PopupDismiss::OutsideClick;

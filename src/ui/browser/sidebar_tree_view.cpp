@@ -194,7 +194,9 @@ luciole::SidebarTreeView::~SidebarTreeView() {
   m_model.setChangedCallback({});
   m_tree.setChangedCallback({});
 }
-void luciole::SidebarTreeView::setRoots(const PinService& pins, const std::vector<Drive>& drives, bool showNetwork) {
+void luciole::SidebarTreeView::setRoots(
+    const PinService& pins, const std::vector<Drive>& drives, bool showNetwork, bool trashFull
+) {
   DirectorySnapshot snapshot;
   snapshot.status = DirectoryStatus::Ready;
   std::vector<DirectoryEntry> entries;
@@ -217,6 +219,7 @@ void luciole::SidebarTreeView::setRoots(const PinService& pins, const std::vecto
     m_glyphs.emplace(
         id,
         !pin.iconName.empty()                  ? pin.iconName
+            : pin.location.isTrash()           ? (trashFull ? "trash-filled" : "trash")
             : known == pins.userPlaces().end() ? "folder"
                                                : known->glyphName
     );

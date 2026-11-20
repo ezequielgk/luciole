@@ -163,6 +163,16 @@ namespace {
     }
     return {};
   }
+  // One readable native regular archive: what Browse Archive and Extract accept, regardless of running jobs.
+  bool browsableArchive(const C& c, const R& r) {
+    return single(r) && all(c, r, [](const DirectoryEntry& entry) {
+             return entry.type == FileType::Regular
+                 && !entry.symlink
+                 && entry.location().nativePath().has_value()
+                 && entry.access.read.value_or(true)
+                 && luciole::isSupportedArchive(entry.location(), entry.contentType.value_or(""));
+           });
+  }
   State archive(const C& c, const R& r, bool compress) {
     if (c.operationsBusy) {
       return unavailable("Another file operation is still finishing.");
@@ -178,11 +188,7 @@ namespace {
           })) {
         return unavailable("Special files cannot be compressed.");
       }
-    } else if (!single(r) || !all(c, r, [](const DirectoryEntry& entry) {
-                 return entry.type == FileType::Regular
-                     && !entry.symlink
-                     && luciole::isSupportedArchive(entry.location(), entry.contentType.value_or(""));
-               })) {
+    } else if (!browsableArchive(c, r)) {
       return unavailable("Select one ZIP or TAR archive.");
     }
     return {};
@@ -426,6 +432,10 @@ namespace {
        .label = "Folders first",
        .shortcut = "",
        .rule = [](const C& c, const R&) { return checked(c.model.sort().directoriesFirst); }},
+      {.action = A::HiddenLast,
+       .label = "Hidden last",
+       .shortcut = "",
+       .rule = [](const C& c, const R&) { return checked(c.model.sort().hiddenLast); }},
       {.action = A::Open, .label = "Open", .shortcut = "Enter", .scope = S::Targets, .rule = open},
       {.action = A::ContainingFolder,
        .label = "Show in containing folder",
@@ -624,6 +634,11 @@ bool luciole::ActionRegistry::current(const ActionContext& context, const Action
            return context.model.location(target.id) == target.location && context.model.visible(target.id);
          });
 }
+luciole::BrowserAction luciole::ActionRegistry::openAction(const ActionContext& context, const ActionRequest& request) {
+  return !context.chooser && current(context, request, ActionScope::Targets) && browsableArchive(context, request)
+      ? A::BrowseArchive
+      : A::Open;
+}
 bool luciole::chooserAction(BrowserAction action) {
   switch (action) {
   case A::Back:
@@ -654,6 +669,7 @@ bool luciole::chooserAction(BrowserAction action) {
   case A::Ascending:
   case A::Descending:
   case A::FoldersFirst:
+  case A::HiddenLast:
   case A::Open:
   case A::SelectAll:
   case A::InvertSelection:

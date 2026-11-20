@@ -248,8 +248,7 @@ bool luciole::DirectoryModel::less(const SortItem& leftItem, const SortItem& rig
   const auto right = rightItem.id;
   const auto& leftPresentation = *leftItem.presentation;
   const auto& rightPresentation = *rightItem.presentation;
-  // Visible entries always precede hidden entries, regardless of field or direction.
-  if (leftItem.hidden != rightItem.hidden) {
+  if (m_sort.hiddenLast && leftItem.hidden != rightItem.hidden) {
     return !leftItem.hidden;
   }
   if (m_sort.directoriesFirst && leftItem.directory != rightItem.directory) {

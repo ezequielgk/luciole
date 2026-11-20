@@ -464,6 +464,15 @@ namespace {
     session.open(Location::fromPath((fixture.path / "plain-file").native()));
     pump.until([&session] { return session.snapshot().status == DirectoryStatus::Error; });
     TEST_CHECK(session.snapshot().error->kind == luciole::FileErrorKind::NotDirectory);
+    session.open(Location::fromUri("luciole-missing-provider://user:secret@example.invalid/folder"));
+    pump.until([&session] { return session.snapshot().status == DirectoryStatus::Error; });
+    TEST_CHECK(session.snapshot().error->kind == luciole::FileErrorKind::Unsupported);
+    const auto& message = session.snapshot().error->message;
+    TEST_CHECK(message.contains("luciole-missing-provider://") && message.contains("GIO/GVfs"));
+    TEST_CHECK(!message.contains("user") && !message.contains("secret") && !message.contains("example.invalid"));
+    session.open(fixture.location());
+    ready(pump, session);
+    TEST_CHECK(!session.snapshot().error && !session.snapshot().entries.empty());
   }
 
   // A folder that changes faster than it can be scanned still publishes, at a bounded rate.

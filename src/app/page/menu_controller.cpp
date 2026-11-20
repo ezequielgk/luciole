@@ -739,7 +739,9 @@ void MenuController::showActionMenu(
   }
   for (const auto action : actions) {
     if (action) {
-      entries.push_back(actionEntry(*action, request, radio && *action != Action::FoldersFirst));
+      entries.push_back(
+          actionEntry(*action, request, radio && *action != Action::FoldersFirst && *action != Action::HiddenLast)
+      );
     } else {
       entries.push_back({.label = "", .separator = true});
     }
@@ -764,7 +766,7 @@ void MenuController::openSortMenu(std::optional<LayoutRect> anchor, bool alignLe
   showActionMenu(
       {Action::SortName, Action::SortType, Action::SortSize, Action::SortModified, Action::SortAccessed,
        Action::SortCreated, Action::SortOwner, Action::SortGroup, Action::SortPermissions, Action::SortLocation,
-       std::nullopt, Action::Ascending, Action::Descending, std::nullopt, Action::FoldersFirst},
+       std::nullopt, Action::Ascending, Action::Descending, std::nullopt, Action::FoldersFirst, Action::HiddenLast},
       true, !anchor.has_value(), anchor, alignLeft
   );
 }

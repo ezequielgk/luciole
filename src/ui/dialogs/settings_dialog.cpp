@@ -163,6 +163,7 @@ SettingsDialog::SettingsDialog(
   );
   addBool(P::SortDescending, "Reverse order");
   addBool(P::DirectoriesFirst, "Folders first");
+  addBool(P::HiddenLast, "Hidden last");
   card("Grid");
   addNumber(P::GridIconSize, "Icon size", {luciole::kGridIconSizes.begin(), luciole::kGridIconSizes.end()});
   addBool(P::ShowSizeCaption, "File size caption");

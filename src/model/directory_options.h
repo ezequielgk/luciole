@@ -213,6 +213,7 @@ namespace luciole {
     SortField field = SortField::Name;
     bool descending = false;
     bool directoriesFirst = true;
+    bool hiddenLast = false;
     bool operator==(const SortOptions&) const = default;
   };
 

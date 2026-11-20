@@ -83,6 +83,7 @@ namespace luciole {
     SortBy,
     SortDescending,
     DirectoriesFirst,
+    HiddenLast,
     ViewMode,
     GridIconSize,
     ListIconSize,
@@ -165,6 +166,7 @@ namespace luciole {
     static constexpr PreferenceKey<luciole::SortField> SortBy{Id::SortBy};
     static constexpr PreferenceKey<bool> SortDescending{Id::SortDescending};
     static constexpr PreferenceKey<bool> DirectoriesFirst{Id::DirectoriesFirst};
+    static constexpr PreferenceKey<bool> HiddenLast{Id::HiddenLast};
     static constexpr PreferenceKey<luciole::ViewMode> ViewMode{Id::ViewMode};
     static constexpr PreferenceKey<int> GridIconSize{Id::GridIconSize};
     static constexpr PreferenceKey<int> ListIconSize{Id::ListIconSize};

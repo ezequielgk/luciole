@@ -38,6 +38,7 @@ background_opacity = 1.0
 corner_radius_scale = 1.0
 sort_by = "name"
 directories_first = true
+hidden_last = false
 ```
 
 Validate one file without opening a window or reading adjacent GUI overrides:
@@ -86,6 +87,7 @@ All keys below belong in `[browser]`. Dimensions are logical pixels unless state
 | `sort_by` | `"name"` | `"name"`, `"type"`, `"size"`, `"modified"`, `"accessed"`, `"created"`, `"owner"`, `"group"`, `"permissions"`, `"location"` |
 | `sort_descending` | `false` | Reverse sort direction |
 | `directories_first` | `true` | Group folders, and links to local folders, before files |
+| `hidden_last` | `false` | Sort shown hidden items after visible ones; `directories_first` applies within each group |
 | `show_sidebar` | `true` | Show the sidebar |
 | `sidebar_width` | `206` | Integer `160` through `400` |
 | `sidebar_tree` | `false` | Optional sidebar folder tree |
@@ -159,6 +161,12 @@ Selection order is the configured command, then the process's inherited `TERMINA
 
 Automatic discovery tries `xdg-terminal-exec` first, then `x-terminal-emulator` and supported terminal executables. The helper honors shared terminal preferences; without a preference it may choose any eligible installed terminal. Set Luciole's command or `TERMINAL` to choose a particular one when several are installed. With neither helper present, Luciole tries Foot, Kitty, Alacritty, Ghostty, WezTerm, Konsole, GNOME Terminal, Console, Ptyxis, Xfce Terminal and XTerm in that order.
 
-Commands support quoted arguments and `~/` in the executable path, without shell expansion, substitutions or environment assignments. Common terminals get their execution separator automatically. An explicitly supplied trailing `--`, `-e` or `-x` is preserved; custom terminal wrappers can use one of those forms. New terminal processes start in the requested folder; the shared helper also receives its directory option. Automatic executable discovery cannot infer a favorite terminal from the fact that several are installed.
+Commands support quoted arguments and `~/` in the executable path, without shell expansion, substitutions or environment assignments. Common terminals get their execution separator automatically. An explicitly supplied trailing `--`, `-e` or `-x` is preserved; custom terminal wrappers can use one of those forms. Automatic executable discovery cannot infer a favorite terminal from the fact that several are installed.
+
+Open Terminal Here and Run in Terminal pass the requested folder both as the process directory and through the supported terminal's directory option. This includes Alacritty, Ghostty, WezTerm, Kitty, Foot, Konsole, GNOME Terminal, Console, Ptyxis, MATE Terminal and Xfce Terminal, plus `xdg-terminal-exec`. WezTerm receives `start` when no subcommand is configured. Ordinary Ghostty launches use a separate process so an existing window cannot override the requested directory or command; an explicitly configured `ghostty +new-window` keeps its reuse behavior. Custom wrappers and `x-terminal-emulator` must forward the inherited directory themselves.
+
+Ghostty loads additional `--config-file` files after command-line settings. When supplying one in the terminal command, leave `working-directory` and `gtk-single-instance` out of that additional file so it does not override Luciole's launch options. The normal Ghostty configuration file can keep its usual defaults.
+
+Terminal-based file handlers start in the files' common native containing folder. A terminal application launcher's explicit desktop `Path` takes precedence; otherwise a confirmed launcher uses the folder from which it was run. Remote or mixed-parent file selections without a common native folder retain the handler's default directory.
 
 The terminal preference applies only when an application asks for a terminal. Graphical or client desktop entries marked `Terminal=false` keep their normal behavior. For example, an Emacs Client entry may reuse an existing Emacs frame, including one running inside a terminal; selecting Kitty here does not override the editor's session policy.

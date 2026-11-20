@@ -8,6 +8,8 @@
 
 Luciole owns decoration negotiation, clipboard/drop transport, cursor fallback, browser composition and selection contours. Common widgets use the actual shared Button, Stepper, Select, Toggle, ScrollView and virtual-grid controls. A file-manager preference binding belongs here, while a generic widget correction belongs upstream.
 
+The compositor's fractional-scale preference belongs to one Wayland surface. Output updates refresh the output scale seed without clearing that preference; subsequent preferred-scale events replace it. Destroying the Wayland surface clears the preference before the object can create another surface.
+
 ## UI phases
 
 Preserve PrepareFrame → Update → Layout → Render.

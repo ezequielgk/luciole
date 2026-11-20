@@ -45,6 +45,7 @@ namespace luciole {
     Ascending,
     Descending,
     FoldersFirst,
+    HiddenLast,
     Open,
     ContainingFolder,
     OriginalLocation,
@@ -168,5 +169,8 @@ namespace luciole {
     static ActionRequest capture(const ActionContext& context);
     static bool current(const ActionContext& context, const ActionRequest& request, ActionScope scope);
     static ActionState state(BrowserAction action, const ActionContext& context, const ActionRequest& request);
+    // The action Open performs: Browse Archive for one browsable archive, otherwise Open. Running jobs do not change
+    // the choice; state() still refuses Browse Archive meanwhile.
+    static BrowserAction openAction(const ActionContext& context, const ActionRequest& request);
   };
 } // namespace luciole

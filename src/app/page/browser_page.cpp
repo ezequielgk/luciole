@@ -308,6 +308,23 @@ void BrowserPage::jobChanged(OperationJob& job) {
     m_createController.changed(job);
     break;
   }
+  if (job.kind() == JobKind::Trash) {
+    const auto status = job.service<luciole::TrashService>().snapshot().status;
+    if (status == luciole::TrashStatus::Finished
+        || status == luciole::TrashStatus::Error
+        || status == luciole::TrashStatus::Cancelled) {
+      m_sidebar.refreshTrashAvailabilityAfterJob(job.id());
+    }
+  } else if (job.kind() == JobKind::EmptyTrash) {
+    const auto status = job.service<luciole::EmptyTrashService>().snapshot().status;
+    if (status == luciole::EmptyTrashStatus::Finished
+        || status == luciole::EmptyTrashStatus::Error
+        || status == luciole::EmptyTrashStatus::Cancelled) {
+      m_sidebar.refreshTrashAvailabilityAfterJob(job.id());
+    }
+  } else if (job.kind() == JobKind::Restore && !job.service<luciole::RestoreService>().busy()) {
+    m_sidebar.refreshTrashAvailabilityAfterJob(job.id());
+  }
   m_browserDirty = true;
   m_surface->requestUpdate();
 }
@@ -1362,6 +1379,7 @@ void BrowserPage::dispatchAction(Action action, const luciole::ActionRequest& re
     }
   }
   if (action == Action::Open) {
+    action = luciole::ActionRegistry::openAction(actionContext(), request);
     Logger("file-launch").debug("Open action dispatch ({} targets)", request.targets.size());
   }
   const auto state = actionState(action, request);
@@ -1452,6 +1470,7 @@ void BrowserPage::runAction(
       {Action::Ascending, sort},
       {Action::Descending, sort},
       {Action::FoldersFirst, sort},
+      {Action::HiddenLast, sort},
       {Action::Open, [](BrowserPage& page, const Call& call) { page.openTargets(call.targets); }},
       {Action::ContainingFolder,
        [](BrowserPage& page, const Call& call) { page.showContaining(call.targets.front().location()); }},
@@ -1600,6 +1619,8 @@ void BrowserPage::sortAction(Action action) {
     options.descending = action == Action::Descending;
   } else if (action == Action::FoldersFirst) {
     options.directoriesFirst = !options.directoriesFirst;
+  } else if (action == Action::HiddenLast) {
+    options.hiddenLast = !options.hiddenLast;
   } else if (options.field != field) {
     options.field = field;
     options.descending = false;
@@ -2136,7 +2157,10 @@ void BrowserPage::syncBrowser() {
       : sort.field == luciole::SortField::Size ? (sort.descending ? "largest first" : "smallest first")
                                                : (sort.descending ? "Z to A" : "A to Z");
   m_menuButton->setTooltip(
-      std::format("View options: {}, {}{}", field, direction, sort.directoriesFirst ? " · Folders first" : "")
+      std::format(
+          "View options: {}, {}{}{}", field, direction, sort.directoriesFirst ? " · Folders first" : "",
+          sort.hiddenLast ? " · Hidden last" : ""
+      )
   );
   const bool grid = m_viewMode == luciole::ViewMode::Grid;
   m_viewSwitch->setSelectedIndex(grid ? 0 : m_viewMode == luciole::ViewMode::List ? 1 : 2);
@@ -2156,6 +2180,15 @@ void BrowserPage::syncBrowser() {
         + (state.enabled ? "" : "\n" + std::string(state.reason))
     );
   }
+  const bool showEmptyTrash = !choosing() && snapshot.location && snapshot.location->isTrash();
+  m_emptyTrashButton->setVisible(showEmptyTrash);
+  m_emptyTrashButton->setParticipatesInLayout(showEmptyTrash);
+  const auto emptyTrashState = actionState(Action::EmptyTrash, request);
+  const std::string emptyTrashLabel(luciole::ActionRegistry::definition(Action::EmptyTrash).label);
+  m_emptyTrashButton->setEnabled(emptyTrashState.enabled);
+  m_emptyTrashButton->setTooltip(
+      emptyTrashState.enabled ? emptyTrashLabel : emptyTrashLabel + "\n" + std::string(emptyTrashState.reason)
+  );
   m_sidebar.sync(snapshot.location);
   m_statusBar.sync(m_miller.enabled());
   const bool empty = model.rows().empty();
@@ -2576,6 +2609,15 @@ std::unique_ptr<Flex> BrowserPage::buildToolbar() {
                .visible = choosing(),
                .participatesInLayout = choosing(),
                .onClick = [this] { dispatchAction(Action::CreateFolder); }}
+          ),
+          ui::button(
+              {.out = &m_emptyTrashButton,
+               .glyph = "trash-x",
+               .glyphSize = Style::baseGlyphSize,
+               .variant = ButtonVariant::Ghost,
+               .visible = false,
+               .participatesInLayout = false,
+               .onClick = [this] { dispatchAction(Action::EmptyTrash); }}
           ),
           ui::button(
               {.out = &m_sortButton,

@@ -4,6 +4,8 @@ Luciole needs a Wayland session with EGL/OpenGL ES support. Neither the Noctalia
 
 Prefer a distribution package when one is available; it provides the simplest installation and upgrade path. Otherwise, build from source as described below. Package maintainers will find dependencies and install layout in [PACKAGING.md](../../PACKAGING.md).
 
+**Trash and remote folders require GVfs.** Install and enable your distribution's GIO/GVfs services and the backends for SFTP/SSH, SMB or WebDAV as needed, with a working session D-Bus connection. An SSH client alone does not provide SFTP browsing. Without the relevant backend, a remote address can fail with **Operation not supported** before a login prompt appears. See [network folders](browsing.md#network-folders) for connection examples and troubleshooting, and the distribution-specific setup below.
+
 ## Arch Linux
 
 [`luciole-git`](https://aur.archlinux.org/packages/luciole-git) is available in the AUR and builds the latest development version. Install it with an AUR helper such as `paru` or `yay`:
@@ -15,6 +17,135 @@ yay -S luciole-git
 ```
 
 Optional helpers for video, PDF and archive support and network locations are listed as optional dependencies; see [optional features](#optional-features).
+
+## NixOS
+
+The flake provides a package, NixOS, Home Manager and hjem modules, and a pinned development environment for `x86_64-linux` and `aarch64-linux`. Enable the `nix-command` and `flakes` experimental features in your Nix configuration before using the commands below.
+
+### GVfs for Trash and remote folders
+
+On NixOS, Trash and remote folders such as `sftp://`, `ssh://`, `smb://` and WebDAV require GVfs services. Installing the Luciole package alone does not enable those services. This also applies to `nix run` and installations managed through Home Manager or hjem.
+
+Add this to your **NixOS system configuration**:
+
+```nix
+services.gvfs.enable = true;
+```
+
+This is a [NixOS service option](https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/services/desktops/gvfs.nix), not a Home Manager option. Rebuild your system, then restart Luciole. If the existing desktop session does not pick up the new service environment, log out and back in.
+
+### Try Luciole
+
+Run Luciole without adding it to your system configuration:
+
+```sh
+nix run github:noctalia-dev/luciole
+```
+
+To build the package and keep a local result link:
+
+```sh
+nix build github:noctalia-dev/luciole
+./result/bin/luciole
+```
+
+### Add the flake input
+
+Add Luciole to your existing `flake.nix` inputs:
+
+```nix
+{
+  inputs.luciole.url = "github:noctalia-dev/luciole";
+}
+```
+
+The module examples below use `inputs`. Pass it to NixOS modules through `specialArgs` in your existing `nixpkgs.lib.nixosSystem` call:
+
+```nix
+specialArgs = { inherit inputs; };
+```
+
+For standalone Home Manager, pass it through `extraSpecialArgs` in `home-manager.lib.homeManagerConfiguration`. With Home Manager's NixOS module, use `home-manager.extraSpecialArgs = { inherit inputs; };`.
+
+### NixOS module
+
+Import the module in your system configuration and enable Luciole:
+
+```nix
+{ inputs, ... }:
+{
+  imports = [ inputs.luciole.nixosModules.default ];
+
+  programs.luciole.enable = true;
+  services.gvfs.enable = true;
+}
+```
+
+The Luciole module installs the application system-wide. Enable GVfs separately as shown above for Trash and network locations; Luciole's modules do not enable it automatically. Optional DNS-SD discovery also needs `services.avahi.enable = true;`.
+
+Rebuild using your configuration's host name:
+
+```sh
+sudo nixos-rebuild switch --flake .#your-host
+```
+
+Alternatively, install only the package with `environment.systemPackages = [ inputs.luciole.packages.${pkgs.stdenv.hostPlatform.system}.default ];` in a module receiving `inputs` and `pkgs`, and enable `services.gvfs.enable = true;` yourself. You can omit the package list entry when using one of Luciole's modules, which installs the package for you.
+
+### Home Manager
+
+With Home Manager already configured, import Luciole's module in your home configuration:
+
+```nix
+{ inputs, ... }:
+{
+  imports = [ inputs.luciole.homeModules.default ];
+
+  programs.luciole = {
+    enable = true;
+    settings = {
+      browser = {
+        view_mode = "grid";
+        show_hidden = false;
+      };
+    };
+  };
+}
+```
+
+Apply it with your usual Home Manager switch command, or rebuild NixOS when Home Manager is integrated into the system configuration. On NixOS, set `services.gvfs.enable = true;` in the system configuration, outside `home-manager.users` or `home.nix`, even when Home Manager installs Luciole. See [GVfs setup](#gvfs-for-trash-and-remote-folders). On other distributions, install and enable the distribution's GIO/GVfs services.
+
+### hjem
+
+With hjem already configured, add Luciole's module to `hjem.extraModules` in your NixOS configuration and enable it for your user:
+
+```nix
+{ inputs, ... }:
+{
+  hjem = {
+    extraModules = [ inputs.luciole.hjemModules.default ];
+    users.your-user.programs.luciole = {
+      enable = true;
+      settings.browser.view_mode = "grid";
+    };
+  };
+
+  services.gvfs.enable = true;
+}
+```
+
+Replace `your-user` with your username, then rebuild NixOS.
+
+Both home modules accept `settings` as an attribute set, a TOML string or a path to a TOML file, and validate it at build time by default. Omitting `settings` leaves `config.toml` untouched. The declarative base lives in `~/.config/luciole/config.toml`; GUI changes remain writable in `settings.toml` and take precedence. Reset a preference in Settings to use its declarative value again. See [configuration](configuration.md#files-and-precedence).
+
+### Updates and development
+
+Update the pinned input from your configuration directory, then apply your configuration again:
+
+```sh
+nix flake update luciole
+```
+
+For source development, run `nix develop` from a Luciole checkout, then use the [development build commands](#development-builds). [Nix packaging](../../PACKAGING.md#nix-integration) documents the wrapper and runtime integration.
 
 ## Build from source
 
@@ -79,17 +210,6 @@ sudo just install release
 
 This installs under `/usr/local`; use `just configure release /usr` before building to choose another prefix. To uninstall, run `sudo ninja -C build-release uninstall` from the same checkout.
 
-### Nix
-
-The flake provides a package and a pinned development environment:
-
-```sh
-nix build github:noctalia-dev/luciole
-./result/bin/luciole
-```
-
-It also exports NixOS, Home Manager and hjem modules. Home Manager and hjem can supply `programs.luciole.settings` as a declarative base; GUI preferences remain separate. See [configuration](configuration.md) and [Nix packaging](../../PACKAGING.md#nix-integration).
-
 ### Development builds
 
 Inside the source directory, `just run release` builds and starts Luciole using the source tree's assets, without installing. Do not reuse that asset override in an installed launcher. `just` lists every recipe, and [CONTRIBUTING.md](../../CONTRIBUTING.md) covers checks and code style.
@@ -102,7 +222,7 @@ luciole /path/to/folder
 luciole 'file:///path/to/folder'
 ```
 
-Without an argument, Luciole opens Home. Supply one directory path or URI to start elsewhere. Remote locations require the corresponding installed GIO/GVfs backend and an already mounted/authenticated location. Luciole's own connect-to-server and credential dialogs are not implemented yet.
+Without an argument, Luciole opens Home. Supply one directory path or URI to start elsewhere. Remote locations require the corresponding installed GIO/GVfs backend and session services. Luciole connects when you open an unmounted location and presents the provider's login or confirmation requests. See [network folders](browsing.md#network-folders) for SFTP addresses, requirements and troubleshooting. A separate connect-to-server address form is still planned.
 
 Every window runs in one Luciole process. Starting `luciole` while it is already running opens a new window in that process, so additional windows cost far less memory than separate instances. A relative path names a folder under the directory where the command ran. The process exits when its last window closes.
 

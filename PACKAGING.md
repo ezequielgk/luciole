@@ -116,6 +116,8 @@ Declare GVfs as a runtime dependency, not just a network-access recommendation. 
 
 A usable session bus and daemon activation are required; a GNOME desktop session is not. Luciole uses GIO directly and does not require `gvfs-fuse`. Do not force `GIO_USE_VFS=local` in a packaged launcher: that test-only setting disables provider access.
 
+SFTP needs `gvfsd-sftp`, its `sftp.mount` descriptor (which also advertises the `ssh` alias), and the SSH client used by that provider. An SSH client or the GIO client module alone does not supply SFTP browsing. Keep the backend executable, mount data and daemon activation available to the same desktop session as Luciole.
+
 DNS-SD discovery is optional and separate from SMB access. For example, Arch supplies [gvfs-dnssd](https://archlinux.org/packages/extra/x86_64/gvfs-dnssd/). Include the provider's GSettings schemas, mount data, executable and D-Bus activation files. Luciole's native WS-Discovery client uses the linked libraries above; neither `gvfs-wsdd` nor a `wsdd`, `wsdd2` or `wsdd-native` package is required. Do not require or enable a discovery daemon for Luciole. Direct SMB access still needs the GVfs SMB backend. Local firewall policy must permit outgoing UDP multicast and the corresponding replies for WS-Discovery; no privileged port or system service is required.
 
 Native packages should use normal system GIO module paths. Nix wrappers expose the separately installed modules through `GIO_EXTRA_MODULES`; users of ordinary distribution packages should not need that export. TLS uses the provider and system trust configuration.
@@ -198,6 +200,8 @@ Private `.luciole-create-*` and `.luciole-history-*` directories can contain ret
 
 [nix/package.nix](nix/package.nix) defines the package. [flake.nix](flake.nix) exports packages, checks, the development shell, an overlay and NixOS/Home Manager/hjem modules; [default.nix](default.nix) provides non-flake entry points.
 
+End-user flake setup and module examples are in the [NixOS installation guide](docs/user/installation.md#nixos).
+
 ```sh
 nix build path:.#default
 nix flake check path:.
@@ -207,7 +211,7 @@ The package wrapper supplies helper paths, GIO/TLS/dconf modules, desktop settin
 
 The Nix recipe supplies libcurl and libxml2 as link dependencies. Optional DNS-SD requires a system Avahi service; the application package does not enable system services.
 
-On NixOS, enable `services.gvfs.enable = true;` for the GVfs daemons and session activation. Luciole's NixOS module installs the application; Home Manager/hjem manage its declarative base configuration. These modules do not independently enable GVfs, select a default file manager or install an always-running Luciole service.
+Luciole's NixOS module installs the application; Home Manager/hjem manage its declarative base configuration. Enable `services.gvfs.enable = true;` explicitly in the NixOS system configuration for the GVfs daemons and session activation. Luciole's modules do not enable GVfs automatically, select a default file manager or install an always-running Luciole service.
 
 ## Verification
 

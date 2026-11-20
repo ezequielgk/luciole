@@ -34,6 +34,36 @@ The cursor ring marks the item the keyboard acts on and stays visible inside a m
 
 Enter an address such as `smb://server/share` in the location bar, or open a saved network place. If the location is not mounted, Luciole asks the installed GIO/GVfs provider to connect and then opens the folder. You can also open an SMB server address and activate one of its listed shares. The same mounted share becomes visible to other applications using that desktop session.
 
+### SFTP over SSH
+
+Press Ctrl+L, enter an address and press Enter:
+
+```text
+sftp://user@server/home/user
+sftp://user@server:2222/path/to/folder
+```
+
+Replace the username, server, port and path with your own values. Omit the port to use 22. The path belongs to the remote SFTP filesystem; a restricted server may expose a different root from its ordinary SSH shell. Encode spaces as `%20`. Do not put passwords in addresses. GVfs also accepts `ssh://` as an alias for SFTP; it opens files, not an interactive terminal. The server must offer the SFTP subsystem.
+
+The provider handles passwords, SSH keys and the SSH agent available to its session. When confirmation or a password is needed, Luciole displays its request. On first connection, verify the server identity through a trusted source before accepting it. An existing authenticated mount or usable key can open without a password prompt. You do not need to mount the folder in another file manager first.
+
+### Missing network support
+
+An immediate **Operation not supported** error without a login prompt can mean GIO cannot access a backend for that protocol. Luciole identifies an unadvertised scheme and explains that its GIO/GVfs backend and session services need to be installed or enabled. A provider that advertises the protocol can also reject an operation; its own error is preserved.
+
+Install the distribution's GVfs service and protocol backends, then restart Luciole. [Arch Linux](https://archlinux.org/packages/extra/x86_64/gvfs/) and [Fedora](https://packages.fedoraproject.org/pkgs/gvfs/gvfs/) provide SFTP in `gvfs`; [Debian](https://packages.debian.org/trixie/gvfs-backends) also needs `gvfs-backends`. An SSH client alone does not supply the GIO backend. On NixOS, enable `services.gvfs.enable = true;` in your system configuration and rebuild; Luciole's modules leave that choice to you. See [NixOS installation](installation.md#nixos). A usable session D-Bus connection is required. A launcher that forces `GIO_USE_VFS=local` disables remote access.
+
+To check the desktop provider independently, run this in a terminal in the same desktop session, using your address:
+
+```sh
+gio mount 'sftp://user@server:2222/path/to/folder'
+gio list 'sftp://user@server:2222/path/to/folder'
+```
+
+These commands connect to and list the remote folder. If they fail too, include their error when reporting the problem. If they work while Luciole still fails, report how Luciole was installed and launched, its version and its exact error.
+
+### Network discovery and login
+
 The **Network** sidebar entry is shown by default, including when no servers are found. Drag it among Places or use Move up/Move down in its context menu to save its position. Settings → Appearance → Sidebar → Show Network hides or restores it in both sidebar modes; its context menu also offers Hide Network. Hiding the entry preserves its position and does not disable direct network addresses or existing network tabs. Discovery starts when you open Network or expand it in the optional sidebar tree; ordinary local startup does not start discovery. Open a discovered server and its share as usual. You can also enter `network:///` directly. Grid, List and Columns use the discovered destination when opening an entry; middle-click and Ctrl+Enter can open it in a new tab.
 
 Luciole discovers SMB computers using its built-in WS-Discovery client, with optional DNS-SD discovery through GVfs and Avahi. No external WS-Discovery helper is needed. Discovery runs in the background while Network is open; closing its last view stops Luciole's discovery workers. Server names may replace numeric addresses as metadata arrives. Refresh retries discovery. A reachable server may not advertise itself, and multicast filtering can prevent discovery. You can still enter its known address or use a saved network place. Discovery does not ask for credentials or open every share in the background. If nothing is discovered, Network remains available.
@@ -50,9 +80,9 @@ Use the toolbar or main menu to choose Grid (Ctrl+1), List (Ctrl+2) or Columns (
 
 List and Columns shorten overflowing filenames in the middle by default, keeping their beginning and ending visible. Settings → Views → Long filenames also offers Shorten at the end. Changes apply to open panes immediately. Grid keeps its two-line name wrapping.
 
-List headers sort by their column. Drag their dividers to resize columns; Settings → List columns controls visibility and order. Additional columns include accessed/created time, owner, group, permissions and location. Missing provider metadata stays unavailable rather than becoming a made-up value. Grid view uses the toolbar's Sort menu. Shown hidden items always sort after visible ones; Folders first applies within each group.
+List headers sort by their column. Drag their dividers to resize columns; Settings → List columns controls visibility and order. Additional columns include accessed/created time, owner, group, permissions and location. Missing provider metadata stays unavailable rather than becoming a made-up value. Grid view uses the toolbar's Sort menu. By default, shown hidden items sort among visible ones. Hidden last, in the Sort menu and Settings, sorts them after visible ones; Folders first then applies within each group.
 
-The background right-click menu also offers Sort. Changing the sort field, direction or Folders first shows the beginning of the new order, including in folders that need scrolling. Selected items stay selected. Sort changes made through list headings or Settings follow the same rule.
+The background right-click menu also offers Sort. Changing the sort field, direction, Folders first or Hidden last shows the beginning of the new order, including in folders that need scrolling. Selected items stay selected. Sort changes made through list headings or Settings follow the same rule.
 
 In large folders, names can appear while detail values are still loading. “Reading…” means a value is pending; “Unknown” means it was unavailable after querying. Hidden extra columns are not queried by ordinary large-folder browsing. Enabling one loads its visible rows. Sorting by metadata or selecting many items can require facts from the rest of the folder; file actions wait for the facts they need.
 
@@ -60,7 +90,7 @@ The floating status pill reports actions, search and selection. Settings → App
 
 Click an entry to select it, Ctrl+click to toggle it and Shift+click to select a range. Clicking empty space clears selection. Drag an area over entries to select several. Ctrl+A selects all visible results, Ctrl+Shift+I inverts selection and Ctrl+S selects by pattern. Escape clears the selection when browsing. Opening uses double-click by default; Settings → General offers single-click opening.
 
-Opening a local file uses the default application for its file type. Use Open With to choose another application or change that file type's default.
+Opening a local file uses the default application for its file type; supported local archives open in Luciole's archive browser instead (see [archives](file-operations.md#archives)). Use Open With to choose another application or change that file type's default.
 
 ## Places and folder trees
 

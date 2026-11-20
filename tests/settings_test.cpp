@@ -511,7 +511,7 @@ namespace {
     fixture.write(
         "config.toml",
         "[browser]\nshow_hidden = true\nsort_by = 'size'\nsort_descending = true\n"
-        "directories_first = false\n"
+        "directories_first = false\nhidden_last = true\n"
     );
     const auto loaded = luciole::loadSettings(fixture.paths());
     TEST_CHECK(loaded.has_value());
