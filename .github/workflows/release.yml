@@ -189,6 +189,20 @@ jobs:
             echo "_The changelog could not be generated; see the commit history for this tag._" >> "$notes_file"
           fi
 
+          # Generated notes only list merged pull requests, and this fork lands upstream
+          # work as merges, so add the plain commit list since the previous release.
+          prev_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=1" --jq '.[0].tag_name // ""' || true)"
+          if [[ -n "$prev_tag" && "$prev_tag" != "$TAG" ]]; then
+            {
+              echo
+              echo "### Commits since \`$prev_tag\`"
+              echo
+            } >> "$notes_file"
+            gh api "repos/${GITHUB_REPOSITORY}/compare/${prev_tag}...${GITHUB_SHA}" \
+              --jq '.commits[] | "- [`\(.sha[0:7])`](\(.html_url)) `\(.commit.message | split("\n")[0])`"' \
+              >> "$notes_file" || true
+          fi
+
           args=(--title "Luciole $VERSION (fork)" --notes-file "$notes_file")
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             args+=(--verify-tag)
