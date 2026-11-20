@@ -137,6 +137,9 @@ jobs:
           Luciole ${VERSION} (x86_64 Linux, GNU libc)
           Built from ${GITHUB_REPOSITORY} commit ${REVISION} on $(date -u +%Y-%m-%d).
 
+          Fork release: this version number belongs to ${GITHUB_REPOSITORY}, not to
+          upstream noctalia-dev/luciole, which publishes no tags or releases.
+
           Install into /usr so the desktop entry, icon, D-Bus services and portal
           backend land in their expected paths:
 
@@ -161,9 +164,32 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
           TAG: ${{ steps.version.outputs.tag }}
+          UPSTREAM_REPO: noctalia-dev/luciole
         run: |
           set -euo pipefail
-          args=(--title "Luciole $VERSION" --generate-notes)
+          # Release numbers belong to this fork; upstream publishes no tags or releases,
+          # so the note keeps the two version spaces from being confused.
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "> **Versioning note.** \`${GITHUB_REPOSITORY}\` is a fork of"
+            echo "> [\`${UPSTREAM_REPO}\`](https://github.com/${UPSTREAM_REPO}) that publishes its own releases."
+            echo "> \`${VERSION}\` is this fork's version number: it does not correspond to an upstream"
+            echo "> release, and upstream does not publish tags or releases."
+            echo
+            echo "Packaged from commit [\`${GITHUB_SHA:0:12}\`](https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA})"
+            echo "as \`luciole-${VERSION}-x86_64-linux-gnu.tar.gz\`."
+            echo
+            echo "### Changes"
+            echo
+          } > "$notes_file"
+          if ! gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            -f target_commitish="$GITHUB_SHA" \
+            --jq .body >> "$notes_file"; then
+            echo "_The changelog could not be generated; see the commit history for this tag._" >> "$notes_file"
+          fi
+
+          args=(--title "Luciole $VERSION (fork)" --notes-file "$notes_file")
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             args+=(--verify-tag)
           else
